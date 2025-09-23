@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" serverName="lab.uzlabina" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="lab.uzlabina">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/barberShop" local="$PROJECT_DIR$" web="lab.uzlabina.cz/~blazeal/barberShop/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>

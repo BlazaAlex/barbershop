@@ -1,0 +1,128 @@
+<?php
+global $conn;
+include 'db.php';
+
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    // Verify reCAPTCHA
+    $secret_key = '6LeXg4AqAAAAAOe_5TA4CmvqSVj9yqUDxrFU7-zt';
+    $response = $_POST['g-recaptcha-response'];
+    $remote_ip = $_SERVER['REMOTE_ADDR'];
+
+// API URL to verify reCAPTCHA
+    $verify_url = 'https://www.google.com/recaptcha/api/siteverify';
+    $data = [
+        'secret' => $secret_key,
+        'response' => $response,
+        'remoteip' => $remote_ip
+    ];
+
+// Initialize cURL
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $verify_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+
+// Execute cURL request
+    $result = curl_exec($ch);
+
+// Check if cURL request was successful
+    if (curl_errno($ch)) {
+        die('Error: "' . curl_error($ch) . '" - Code: ' . curl_errno($ch));
+    }
+
+// Close cURL connection
+    curl_close($ch);
+
+    $result_json = json_decode($result);
+
+// Check if reCAPTCHA verification was successful
+    if (!$result_json->success) {
+        die('Error: reCAPTCHA verification failed. Please try again.');
+    }
+
+
+    // Proceed with registration logic (insert into the database, etc.)
+    if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+        $username = $_POST['username'];
+        $password = password_hash($_POST['password'], PASSWORD_BCRYPT);
+        $name = $_POST['name'];
+        $surname = $_POST['surname'];
+        $email = $_POST['email'];
+        $phone = $_POST['phone'];
+        $dial_code = $_POST['dial_code'];
+
+        // Prepare and execute the query
+        $sql = "INSERT INTO b_zakaznici (username, password, name, surname, email, phone) VALUES (?, ?, ?, ?, ?, ?)";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ssssss", $username, $password, $name, $surname, $email, $phone);
+        if ($stmt->execute()) {
+            // Output HTML with a modal for redirection
+            echo '<!DOCTYPE html>
+    <html>
+    <head>
+        <link rel="stylesheet" type="text/css" href="style.css">
+        <script type="text/javascript">
+            setTimeout(function() {
+                window.location.href = "login.php";
+            }, 3000); // 3000 milliseconds = 5 seconds
+        </script>
+    </head>
+    <body>
+        <!-- Modal -->
+        <div id="myModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <p>Registration successful! You will be redirected to the login page in 3 seconds.</p>
+            </div>
+        </div>
+
+        <script>
+            // Close the modal if the user clicks on the close button
+            document.querySelector(".close").onclick = function() {
+                document.getElementById("myModal").style.display = "none";
+            }
+        </script>
+    </body>
+    </html>';
+        } else {
+            echo "Error: " . $stmt->error;
+        }
+    }
+}
+?>
+
+<form method="post" action="register.php">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    Name: <input type="text" name="name" required><br>
+    Surname: <input type="text" name="surname" required><br>
+    Username: <input type="text" name="username" required><br>
+    Password: <input type="password" name="password" required><br>
+    Email: <input type="email" name="email" required><br>
+    Phone: <input type="text" name="phone" required><br>
+    Dial Code:
+    <select name="dial_code" required>
+        <option value="+420">+420 (Czechia)</option>
+        <option value="+1">+1 (USA)</option>
+        <!-- Add other dial codes as needed -->
+    </select><br>
+    <div class="g-recaptcha" data-sitekey="6LeXg4AqAAAAAD04jFc2QPrV4GoIEgCBrHCgbU6v"></div>
+
+    <!-- Visible Register Button -->
+    <input type="submit" value="Register">
+    <a href="login.php">Go back to main site</a>
+</form>
+
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+<script>
+    // Intercept form submission and check reCAPTCHA before submitting the form
+    document.getElementById('registerForm').addEventListener('submit', function(event) {
+        // Check if reCAPTCHA is verified
+        var recaptchaResponse = grecaptcha.getResponse();
+        if (recaptchaResponse.length === 0) {
+            event.preventDefault(); // Prevent form submission
+            alert('Please complete the reCAPTCHA');
+        }
+    });
+</script>
