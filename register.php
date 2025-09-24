@@ -30,10 +30,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     curl_close($ch);
 
-    $result_json = json_decode($result);
+    //nez koupim domenu, tak turnstile je off
+    /* $result_json = json_decode($result);
     if (empty($result_json->success)) {
         die('Error: Turnstile verification failed. Please try again.');
-    }
+    } */
 
     // Proceed with registration logic
     $username = trim($_POST['username'] ?? '');

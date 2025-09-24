@@ -20,6 +20,8 @@ if ($is_admin) {
         JOIN b_zakaznici u ON r.user_id = u.id
         ORDER BY r.appointment_date
     ";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
 } else {
     $sql = "
         SELECT r.id, r.appointment_date, r.service, b.name AS barber_name
@@ -28,12 +30,7 @@ if ($is_admin) {
         WHERE r.user_id = ?
         ORDER BY r.appointment_date
     ";
-}
-
-$stmt = $pdo->prepare($sql);
-if ($is_admin) {
-    $stmt->execute();
-} else {
+    $stmt = $pdo->prepare($sql);
     $stmt->execute([$_SESSION['user_id']]);
 }
 $reservations = $stmt->fetchAll();
@@ -64,10 +61,8 @@ $reservations = $stmt->fetchAll();
             <th>Barber</th>
             <?php if ($is_admin): ?>
                 <th>Customer</th>
-                <th>Actions</th>
-            <?php else: ?>
-                <th>Actions</th>
             <?php endif; ?>
+            <th>Actions</th>
         </tr>
         </thead>
         <tbody>
@@ -78,20 +73,13 @@ $reservations = $stmt->fetchAll();
                 <td><?= htmlspecialchars($res['barber_name']) ?></td>
                 <?php if ($is_admin): ?>
                     <td><?= htmlspecialchars($res['customer_name']) ?></td>
-                    <td>
-                        <form action="cancel.php" method="POST" style="display:inline;">
-                            <input type="hidden" name="reservation_id" value="<?= $res['id'] ?>">
-                            <button type="submit">Cancel</button>
-                        </form>
-                    </td>
-                <?php else: ?>
-                    <td>
-                        <form action="cancel.php" method="POST" style="display:inline;">
-                            <input type="hidden" name="reservation_id" value="<?= $res['id'] ?>">
-                            <button type="submit">Cancel</button>
-                        </form>
-                    </td>
                 <?php endif; ?>
+                <td>
+                    <form action="cancel.php" method="POST" style="display:inline;">
+                        <input type="hidden" name="reservation_id" value="<?= $res['id'] ?>">
+                        <button type="submit">Cancel</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
