@@ -35,25 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reservation_id'])) {
 
         $diff = $now->diff($appointment_time);
         if ($appointment_time <= $now || $diff->days < 1) {
-            echo '<!DOCTYPE html>
-            <html>
-            <head>
-                <link rel="stylesheet" type="text/css" href="style.css">
-                <script type="text/javascript">
-                    setTimeout(function() {
-                        window.location.href = "index.php";
-                    }, 2000);
-                </script>
-            </head>
-            <body>
-                <div id="myModal" class="modal">
-                    <div class="modal-content">
-                        <span class="close">&times;</span>
-                        <p>You cannot cancel less than 24 hours before your appointment.</p>
-                    </div>
-                </div>
-            </body>
-            </html>';
+            echo "You cannot cancel less than 24 hours before your appointment. Contact the Administrator.";
             exit;
         }
     }
@@ -61,25 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reservation_id'])) {
     try {
         $stmt = $pdo->prepare("DELETE FROM b_rezervace WHERE id = ?");
         if ($stmt->execute([$reservation_id])) {
-            echo '<!DOCTYPE html>
-            <html>
-            <head>
-                <link rel="stylesheet" type="text/css" href="style.css">
-                <script type="text/javascript">
-                    setTimeout(function() {
-                        window.location.href = "index.php";
-                    }, 1000);
-                </script>
-            </head>
-            <body>
-                <div id="myModal" class="modal">
-                    <div class="modal-content">
-                        <span class="close">&times;</span>
-                        <p>Reservation cancelled successfully!</p>
-                    </div>
-                </div>
-            </body>
-            </html>';
+            header("Location: index.php?cancel=success");
+            exit;
         } else {
             echo "Error cancelling reservation.";
         }
@@ -87,4 +52,3 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reservation_id'])) {
         echo "Error cancelling reservation: " . $e->getMessage();
     }
 }
-?>

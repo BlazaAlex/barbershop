@@ -11,29 +11,83 @@ if (!isset($_SESSION['user_id'])) {
 
 $is_admin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
 
-// Fetch reservations
+// Get today's date
+$today = (new DateTime())->format('Y-m-d');
+
+// Fetch reservations for today (top table)
 if ($is_admin) {
-    $sql = "
-        SELECT r.id, r.appointment_date, r.service, b.name AS barber_name, u.username AS customer_name
+    $sql_today = "
+        SELECT r.id, r.appointment_date, r.service, b.name AS barber_name,
+               u.username AS customer_name, u.email, u.phone, u.name AS customer_firstname, u.surname AS customer_surname
         FROM b_rezervace r
         JOIN b_barbers b ON r.barber_id = b.id
         JOIN b_zakaznici u ON r.user_id = u.id
+        WHERE DATE(r.appointment_date) = :today
         ORDER BY r.appointment_date
     ";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute();
+    $stmt_today = $pdo->prepare($sql_today);
+    $stmt_today->execute([':today' => $today]);
 } else {
-    $sql = "
+    $sql_today = "
         SELECT r.id, r.appointment_date, r.service, b.name AS barber_name
         FROM b_rezervace r
         JOIN b_barbers b ON r.barber_id = b.id
-        WHERE r.user_id = ?
+        WHERE r.user_id = :user_id AND DATE(r.appointment_date) = :today
         ORDER BY r.appointment_date
     ";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([$_SESSION['user_id']]);
+    $stmt_today = $pdo->prepare($sql_today);
+    $stmt_today->execute([':user_id' => $_SESSION['user_id'], ':today' => $today]);
 }
-$reservations = $stmt->fetchAll();
+$today_reservations = $stmt_today->fetchAll();
+
+// Fetch all barbers (needed for timetable)
+$stmt_barbers = $pdo->prepare("SELECT id, name FROM b_barbers ORDER BY name");
+$stmt_barbers->execute();
+$barbers = $stmt_barbers->fetchAll(PDO::FETCH_KEY_PAIR); // id => name
+
+// Fetch upcoming week reservations for timetable (admins only)
+$week_reservations = [];
+if ($is_admin) {
+    $sql_week = "
+        SELECT r.id, r.appointment_date, r.service, r.barber_id,
+               u.username AS customer_name
+        FROM b_rezervace r
+        JOIN b_zakaznici u ON r.user_id = u.id
+        WHERE DATE(r.appointment_date) > :today
+        ORDER BY r.appointment_date
+    ";
+    $stmt_week = $pdo->prepare($sql_week);
+    $stmt_week->execute([':today' => $today]);
+    $week_reservations_raw = $stmt_week->fetchAll();
+
+    // Build a multi-dimensional array: week_schedule[date][time][barber_id] = info
+    $week_schedule = [];
+    foreach ($week_reservations_raw as $res) {
+        $dt = new DateTime($res['appointment_date']);
+        $date = $dt->format('Y-m-d');
+        $time = $dt->format('H:i');
+        $week_schedule[$date][$time][$res['barber_id']] = $res['customer_name'] . " (" . $res['service'] . ")";
+    }
+}
+
+// Time slots from 10:00 to 20:00 every 30 minutes
+$time_slots = [];
+$start_time = new DateTime('10:00');
+$end_time = new DateTime('20:00');
+$interval = new DateInterval('PT30M');
+$period = new DatePeriod($start_time, $interval, $end_time);
+foreach ($period as $time) {
+    $time_slots[] = $time->format('H:i');
+}
+
+// Helper function to check if customer can cancel
+function canCancel($res, $is_admin) {
+    if ($is_admin) return true;
+    $now = new DateTime();
+    $appt_time = new DateTime($res['appointment_date']);
+    $diff = $now->diff($appt_time);
+    return ($appt_time > $now && $diff->days >= 1);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -42,8 +96,17 @@ $reservations = $stmt->fetchAll();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Barber Shop Reservation System</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .contact-info { display: none; margin-top: 5px; padding: 5px; border: 1px solid #ccc; background: #f9f9f9; font-size: 0.9em; }
+        .contact-btn { margin-top: 3px; display: inline-block; padding: 3px 6px; background: #007BFF; color: #fff; border: none; border-radius: 3px; cursor: pointer; }
+        .contact-btn:hover { background: #0056b3; }
+        table { border-collapse: collapse; margin-bottom: 20px; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 5px; text-align: left; vertical-align: top; }
+        td.booked { background: #ffd; }
+    </style>
 </head>
 <body>
+
 <h1>Welcome, <?= htmlspecialchars($_SESSION['username'] ?? 'guest') ?>!</h1>
 
 <nav>
@@ -51,41 +114,106 @@ $reservations = $stmt->fetchAll();
     <a href="logout.php">Logout</a>
 </nav>
 
-<h2>Reservations</h2>
-<?php if (count($reservations) > 0): ?>
-    <table border="1" cellpadding="5" cellspacing="0">
+<h2>Today's Reservations</h2>
+<?php if (count($today_reservations) > 0): ?>
+    <table>
         <thead>
         <tr>
             <th>Date & Time</th>
             <th>Service</th>
             <th>Barber</th>
-            <?php if ($is_admin): ?>
-                <th>Customer</th>
-            <?php endif; ?>
+            <?php if ($is_admin): ?><th>Customer</th><?php endif; ?>
             <th>Actions</th>
         </tr>
         </thead>
         <tbody>
-        <?php foreach ($reservations as $res): ?>
+        <?php foreach ($today_reservations as $index => $res): ?>
             <tr>
                 <td><?= htmlspecialchars($res['appointment_date']) ?></td>
                 <td><?= htmlspecialchars($res['service']) ?></td>
                 <td><?= htmlspecialchars($res['barber_name']) ?></td>
                 <?php if ($is_admin): ?>
-                    <td><?= htmlspecialchars($res['customer_name']) ?></td>
+                    <td>
+                        <?= htmlspecialchars($res['customer_name']) ?><br>
+                        <button class="contact-btn" onclick="toggleContact('cinfo<?= $index ?>')">Contact Info</button>
+                        <div id="cinfo<?= $index ?>" class="contact-info">
+                            <p>Email: <?= htmlspecialchars($res['email'] ?? '') ?></p>
+                            <p>Phone: <?= htmlspecialchars($res['phone'] ?? '') ?></p>
+                            <p>Full Name: <?= htmlspecialchars(($res['customer_firstname'] ?? '') . ' ' . ($res['customer_surname'] ?? '')) ?></p>
+                        </div>
+                    </td>
                 <?php endif; ?>
                 <td>
-                    <form action="cancel.php" method="POST" style="display:inline;">
-                        <input type="hidden" name="reservation_id" value="<?= $res['id'] ?>">
-                        <button type="submit">Cancel</button>
-                    </form>
+                    <?php if (canCancel($res, $is_admin)): ?>
+                        <form action="cancel.php" method="POST" style="display:inline;">
+                            <input type="hidden" name="reservation_id" value="<?= $res['id'] ?>">
+                            <button type="submit">Cancel</button>
+                        </form>
+                    <?php else: ?>
+                        <span>Cannot cancel</span>
+                    <?php endif; ?>
                 </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
     </table>
 <?php else: ?>
-    <p>No reservations found.</p>
+    <p>No reservations for today.</p>
 <?php endif; ?>
+
+<?php if ($is_admin && !empty($week_schedule)): ?>
+    <h2>Weekly Schedule (Barber-Time Table)</h2>
+    <?php
+// Get the next 7 days excluding Sundays
+    $days = [];
+    $now = new DateTime();
+    for ($i = 0; $i < 7; $i++) {
+        $d = (clone $now)->add(new DateInterval("P{$i}D"));
+        if ((int)$d->format('N') < 7) { // skip Sunday
+            $days[] = $d->format('Y-m-d');
+        }
+    }
+    ?>
+    <table>
+        <thead>
+        <tr>
+            <th>Time</th>
+            <?php foreach ($barbers as $barber_name): ?>
+                <th><?= htmlspecialchars($barber_name) ?></th>
+            <?php endforeach; ?>
+        </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($time_slots as $time): ?>
+            <tr>
+                <td><?= $time ?></td>
+                <?php foreach (array_keys($barbers) as $barber_id): ?>
+                    <td>
+                        <?php
+                        $found = false;
+                        foreach ($days as $day) {
+                            if (isset($week_schedule[$day][$time][$barber_id])) {
+                                echo htmlspecialchars($week_schedule[$day][$time][$barber_id]) . "<br>(" . $day . ")";
+                                $found = true;
+                                break; // show first found day per cell
+                            }
+                        }
+                        if (!$found) echo '';
+                        ?>
+                    </td>
+                <?php endforeach; ?>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+<?php endif; ?>
+
+<script>
+    function toggleContact(id) {
+        const el = document.getElementById(id);
+        el.style.display = (el.style.display === 'block') ? 'none' : 'block';
+    }
+</script>
+
 </body>
 </html>
