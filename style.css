@@ -137,3 +137,22 @@ table tr:nth-child(even) {
     text-decoration: none;
     cursor: pointer;
 }
+
+.contact-info { display: none; margin-top: 5px; padding: 5px; border: 1px solid #ccc; background: #f9f9f9; font-size: 0.9em; }
+.contact-btn { margin-top: 3px; display: inline-block; padding: 3px 6px; background: #007BFF; color: #fff; border: none; border-radius: 3px; cursor: pointer; }
+.contact-btn:hover { background: #0056b3; }
+table { border-collapse: collapse; margin-bottom: 20px; width: 100%; }
+th, td { border: 1px solid #ccc; padding: 5px; text-align: left; vertical-align: top; }
+td.booked { background: #ffd; position: relative; }
+td.booked:hover::after {
+    content: attr(data-info);
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: #333;
+    color: #fff;
+    padding: 5px;
+    font-size: 0.9em;
+    white-space: nowrap;
+    z-index: 10;
+}

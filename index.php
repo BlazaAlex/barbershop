@@ -188,7 +188,13 @@ for ($i = 0; $i < 7; $i++) {
                     <?php endif; ?>
                     <td><?= htmlspecialchars($barber_name) ?></td>
                     <?php foreach ($time_slots as $time): ?>
-                        <td><?= $week_schedule[$date][$time][$barber_id] ?? '' ?></td>
+                        <?php
+                        $cell_text = $week_schedule[$date][$time][$barber_id] ?? '';
+                        $cell_class = $cell_text ? 'booked' : '';
+                        ?>
+                        <td class="<?= $cell_class ?>" <?= $cell_class ? "data-info='" . htmlspecialchars($cell_text, ENT_QUOTES) . "'" : "" ?>>
+                            <?= htmlspecialchars($cell_text) ?>
+                        </td>
                     <?php endforeach; ?>
                 </tr>
             <?php endforeach; ?>
@@ -196,13 +202,3 @@ for ($i = 0; $i < 7; $i++) {
         </tbody>
     </table>
 <?php endif; ?>
-
-<script>
-    function toggleContact(id) {
-        const el = document.getElementById(id);
-        el.style.display = (el.style.display === 'block') ? 'none' : 'block';
-    }
-</script>
-
-</body>
-</html>
