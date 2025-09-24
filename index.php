@@ -47,14 +47,17 @@ $stmt_barbers = $pdo->prepare("SELECT id, name FROM b_barbers ORDER BY name");
 $stmt_barbers->execute();
 $barbers = $stmt_barbers->fetchAll(PDO::FETCH_KEY_PAIR);
 
-// --- Weekly schedule (admins only) ---
+// Combine today and upcoming week reservations for timetable (admins only)
 $week_schedule = [];
 if ($is_admin) {
-    $sql_week = "SELECT r.id, r.appointment_date, r.service, r.barber_id, u.username AS customer_name
-                 FROM b_rezervace r
-                 JOIN b_zakaznici u ON r.user_id = u.id
-                 WHERE DATE(r.appointment_date) > :today
-                 ORDER BY r.appointment_date";
+    $sql_week = "
+        SELECT r.id, r.appointment_date, r.service, r.barber_id,
+               u.username AS customer_name, u.email, u.phone, u.name AS customer_firstname, u.surname AS customer_surname
+        FROM b_rezervace r
+        JOIN b_zakaznici u ON r.user_id = u.id
+        WHERE DATE(r.appointment_date) >= :today
+        ORDER BY r.appointment_date
+    ";
     $stmt_week = $pdo->prepare($sql_week);
     $stmt_week->execute([':today' => $today]);
     $week_reservations_raw = $stmt_week->fetchAll();
@@ -63,9 +66,13 @@ if ($is_admin) {
         $dt = new DateTime($res['appointment_date']);
         $date = $dt->format('Y-m-d');
         $time = $dt->format('H:i');
-        $week_schedule[$date][$time][$res['barber_id']] = $res['customer_name'] . " (" . $res['service'] . ")";
+        $week_schedule[$date][$time][$res['barber_id']] = $res['customer_name']
+                . " (" . $res['service'] . ")"
+                . " | " . ($res['email'] ?? '')
+                . " | " . ($res['phone'] ?? '');
     }
 }
+
 
 // --- Time slots ---
 $time_slots = [];
@@ -110,7 +117,7 @@ for ($i = 0; $i < 7; $i++) {
         .contact-btn:hover { background: #0056b3; }
         table { border-collapse: collapse; margin-bottom: 20px; width: 100%; }
         th, td { border: 1px solid #ccc; padding: 5px; text-align: left; vertical-align: top; }
-        td.booked { background: #ffd; }
+        td.booked { background: #bb6319; }
     </style>
     <script>
         function toggleContact(id) {
