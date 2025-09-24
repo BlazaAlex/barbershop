@@ -1,25 +1,12 @@
 <?php
 // index.php
-global $pdo;
 session_start();
 require 'db.php';
 $pdo = getDbConnection();
 
-
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
-}
-
-// Define time slots (every half-hour from 10:00 AM to 8:00 PM)
-$start_time = new DateTime('10:00');
-$end_time = new DateTime('20:00');
-$interval = new DateInterval('PT30M'); // 30 minute interval
-
-$time_slots = [];
-$period = new DatePeriod($start_time, $interval, $end_time);
-foreach ($period as $time) {
-    $time_slots[] = $time;
 }
 
 $is_admin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
@@ -33,35 +20,23 @@ if ($is_admin) {
         JOIN b_zakaznici u ON r.user_id = u.id
         ORDER BY r.appointment_date
     ";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute();
-    $reservations = $stmt->fetchAll();
 } else {
-    // For non-admins we fetch reservations (without customer_name)
     $sql = "
         SELECT r.id, r.appointment_date, r.service, b.name AS barber_name
         FROM b_rezervace r
         JOIN b_barbers b ON r.barber_id = b.id
+        WHERE r.user_id = ?
         ORDER BY r.appointment_date
     ";
-    $stmt = $pdo->prepare($sql);
+}
+
+$stmt = $pdo->prepare($sql);
+if ($is_admin) {
     $stmt->execute();
-    $reservations = $stmt->fetchAll();
+} else {
+    $stmt->execute([$_SESSION['user_id']]);
 }
-
-// Fetch barbers
-$stmt_barbers = $pdo->prepare("SELECT id, name FROM b_barbers ORDER BY name");
-$stmt_barbers->execute();
-$barbers = $stmt_barbers->fetchAll();
-
-// Generate dates for the next 7 days, excluding Sundays
-$dates = [];
-for ($i = 0; $i < 7; $i++) {
-    $current_date = (new DateTime())->add(new DateInterval("P{$i}D"));
-    if ((int)$current_date->format('N') < 7) { // Exclude Sundays (N=7)
-        $dates[] = $current_date;
-    }
-}
+$reservations = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -72,7 +47,57 @@ for ($i = 0; $i < 7; $i++) {
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>Welcome, <?php echo htmlspecialchars($_SESSION['username'] ?? 'guest', ENT_QUOTES, 'UTF-8'); ?>!</h1>
-<?php if (isset($_SESSION['username'])): ?>
-<a href="reserve.php">Make a Reservation</a><br>
+<h1>Welcome, <?= htmlspecialchars($_SESSION['username'] ?? 'guest') ?>!</h1>
+
+<nav>
+    <a href="reserve.php">Make a Reservation</a> |
+    <a href="logout.php">Logout</a>
+</nav>
+
+<h2>Reservations</h2>
+<?php if (count($reservations) > 0): ?>
+    <table border="1" cellpadding="5" cellspacing="0">
+        <thead>
+        <tr>
+            <th>Date & Time</th>
+            <th>Service</th>
+            <th>Barber</th>
+            <?php if ($is_admin): ?>
+                <th>Customer</th>
+                <th>Actions</th>
+            <?php else: ?>
+                <th>Actions</th>
+            <?php endif; ?>
+        </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($reservations as $res): ?>
+            <tr>
+                <td><?= htmlspecialchars($res['appointment_date']) ?></td>
+                <td><?= htmlspecialchars($res['service']) ?></td>
+                <td><?= htmlspecialchars($res['barber_name']) ?></td>
+                <?php if ($is_admin): ?>
+                    <td><?= htmlspecialchars($res['customer_name']) ?></td>
+                    <td>
+                        <form action="cancel.php" method="POST" style="display:inline;">
+                            <input type="hidden" name="reservation_id" value="<?= $res['id'] ?>">
+                            <button type="submit">Cancel</button>
+                        </form>
+                    </td>
+                <?php else: ?>
+                    <td>
+                        <form action="cancel.php" method="POST" style="display:inline;">
+                            <input type="hidden" name="reservation_id" value="<?= $res['id'] ?>">
+                            <button type="submit">Cancel</button>
+                        </form>
+                    </td>
+                <?php endif; ?>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+<?php else: ?>
+    <p>No reservations found.</p>
 <?php endif; ?>
+</body>
+</html>
