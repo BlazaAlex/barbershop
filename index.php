@@ -1,7 +1,8 @@
 <?php
-global $conn;
+// index.php
+global $pdo;
 session_start();
-include 'db.php';
+require_once 'db.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
@@ -19,57 +20,47 @@ foreach ($period as $time) {
     $time_slots[] = $time;
 }
 
-$is_admin = ($_SESSION['role'] == 'admin');
+$is_admin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
 
 // Fetch reservations
 if ($is_admin) {
-    $stmt = $conn->prepare("
-        SELECT r.id, r.appointment_date, r.service, b.name as barber_name, u.username as customer_name 
+    $sql = "
+        SELECT r.id, r.appointment_date, r.service, b.name AS barber_name, u.username AS customer_name
         FROM b_rezervace r
         JOIN b_barbers b ON r.barber_id = b.id
         JOIN b_zakaznici u ON r.user_id = u.id
         ORDER BY r.appointment_date
-    ");
+    ";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    $reservations = $stmt->fetchAll();
 } else {
-    $stmt = $conn->prepare("
-        SELECT r.id, r.appointment_date, r.service, b.name as barber_name 
+    // For non-admins we fetch reservations (without customer_name)
+    $sql = "
+        SELECT r.id, r.appointment_date, r.service, b.name AS barber_name
         FROM b_rezervace r
         JOIN b_barbers b ON r.barber_id = b.id
         ORDER BY r.appointment_date
-    ");
-}
-$stmt->execute();
-$result_reservations = $stmt->get_result();
-
-$reservations = [];
-if ($result_reservations->num_rows > 0) {
-    while ($row = $result_reservations->fetch_assoc()) {
-        $reservations[] = $row;
-    }
+    ";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    $reservations = $stmt->fetchAll();
 }
 
 // Fetch barbers
-$stmt_barbers = $conn->prepare("SELECT id, name FROM b_barbers ORDER BY name");
+$stmt_barbers = $pdo->prepare("SELECT id, name FROM b_barbers ORDER BY name");
 $stmt_barbers->execute();
-$result_barbers = $stmt_barbers->get_result();
-
-$barbers = [];
-if ($result_barbers->num_rows > 0) {
-    while ($row = $result_barbers->fetch_assoc()) {
-        $barbers[] = $row;
-    }
-}
+$barbers = $stmt_barbers->fetchAll();
 
 // Generate dates for the next 7 days, excluding Sundays
 $dates = [];
 for ($i = 0; $i < 7; $i++) {
     $current_date = (new DateTime())->add(new DateInterval("P{$i}D"));
-    if ($current_date->format('N') < 7) { // Exclude Sundays (N=7)
+    if ((int)$current_date->format('N') < 7) { // Exclude Sundays (N=7)
         $dates[] = $current_date;
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -79,57 +70,7 @@ for ($i = 0; $i < 7; $i++) {
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>Welcome, <?php echo htmlspecialchars($_SESSION['username'], ENT_QUOTES, 'UTF-8'); ?>!</h1>
+<h1>Welcome, <?php echo htmlspecialchars($_SESSION['username'] ?? 'guest', ENT_QUOTES, 'UTF-8'); ?>!</h1>
 <?php if (isset($_SESSION['username'])): ?>
-    <a href="reserve.php">Make a Reservation</a><br>
-    <a href="logout.php">Logout</a>
-<?php else: ?>
-    <a href="login.php">Login</a>
-    <a href="register.php">Register</a>
+<a href="reserve.php">Make a Reservation</a><br>
 <?php endif; ?>
-
-<h2>Reservations</h2>
-<?php foreach ($dates as $date): ?>
-    <h3><?php echo htmlspecialchars($date->format('Y-m-d'), ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($date->format('l'), ENT_QUOTES, 'UTF-8'); ?>)</h3>
-    <table>
-        <thead>
-        <tr>
-            <th>Barber Name</th>
-            <?php foreach ($time_slots as $slot): ?>
-                <th><?php echo htmlspecialchars($slot->format('H:i'), ENT_QUOTES, 'UTF-8'); ?></th>
-            <?php endforeach; ?>
-        </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($barbers as $barber): ?>
-            <tr>
-                <td><?php echo htmlspecialchars($barber['name'], ENT_QUOTES, 'UTF-8'); ?></td>
-                <?php foreach ($time_slots as $slot): ?>
-                    <?php
-                    $slot_str = $date->format('Y-m-d') . ' ' . $slot->format('H:i:s');
-                    $found = false;
-                    foreach ($reservations as $reservation) {
-                        if ($reservation['barber_name'] == $barber['name'] && (new DateTime($reservation['appointment_date']))->format('Y-m-d H:i:s') == $slot_str) {
-                            echo "<td class='occupied'>";
-                            echo htmlspecialchars($reservation['service'], ENT_QUOTES, 'UTF-8');
-                            if ($is_admin) {
-                                echo " - " . htmlspecialchars($reservation['customer_name'], ENT_QUOTES, 'UTF-8');
-                                echo " <a href='reservation_detail.php?id=" . htmlspecialchars($reservation['id'], ENT_QUOTES, 'UTF-8') . "' class='manage-button'>Manage Reservation</a>";
-                            }
-                            echo "</td>";
-                            $found = true;
-                            break;
-                        }
-                    }
-                    if (!$found) {
-                        echo "<td class='free'>Free</td>";
-                    }
-                    ?>
-                <?php endforeach; ?>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-<?php endforeach; ?>
-</body>
-</html>

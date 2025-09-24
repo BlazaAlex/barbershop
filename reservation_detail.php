@@ -1,46 +1,44 @@
 <?php
-global $conn;
+// reservation_detail.php
 session_start();
-include 'db.php';
+require_once 'db.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
 }
 
-if (!isset($_GET['id'])) {
+if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     echo "No reservation ID provided.";
     exit;
 }
 
-$reservation_id = $_GET['id'];
+$reservation_id = (int)$_GET['id'];
 
-// Fetch reservation details using a prepared statement
+// Fetch reservation details
 $sql = "
-    SELECT r.id, r.appointment_date, r.service, b.name as barber_name, u.username as customer_name, u.email, u.phone, u.name, u.surname 
+    SELECT r.id, r.appointment_date, r.service, b.name AS barber_name,
+           u.username AS customer_name, u.email, u.phone, u.name AS customer_firstname, u.surname AS customer_surname
     FROM b_rezervace r
     JOIN b_barbers b ON r.barber_id = b.id
     JOIN b_zakaznici u ON r.user_id = u.id
-    WHERE r.id = ?
+    WHERE r.id = :id
+    LIMIT 1
 ";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("i", $reservation_id);
-$stmt->execute();
-$result = $stmt->get_result();
+$stmt = $pdo->prepare($sql);
+$stmt->execute([':id' => $reservation_id]);
+$reservation = $stmt->fetch();
 
-if ($result->num_rows == 0) {
+if (!$reservation) {
     echo "No reservation found with that ID.";
     exit;
 }
 
-$reservation = $result->fetch_assoc();
-
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['cancel'])) {
-    // Delete reservation using a prepared statement
-    $sql_delete = "DELETE FROM b_rezervace WHERE id = ?";
-    $stmt_delete = $conn->prepare($sql_delete);
-    $stmt_delete->bind_param("i", $reservation_id);
-    if ($stmt_delete->execute()) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel'])) {
+    $sql_delete = "DELETE FROM b_rezervace WHERE id = :id";
+    $stmt_delete = $pdo->prepare($sql_delete);
+    try {
+        $stmt_delete->execute([':id' => $reservation_id]);
         echo '<!DOCTYPE html>
         <html>
         <head>
@@ -48,20 +46,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['cancel'])) {
             <script type="text/javascript">
                 setTimeout(function() {
                     window.location.href = "index.php";
-                }, 1000); // 1000 milliseconds = 1 second
+                }, 1000);
             </script>
         </head>
         <body>
-            <!-- Modal -->
             <div id="myModal" class="modal">
                 <div class="modal-content">
                     <span class="close">&times;</span>
                     <p>Reservation cancelled successfully!</p>
                 </div>
             </div>
-
             <script>
-                // Close the modal if the user clicks on the close button
                 document.querySelector(".close").onclick = function() {
                     document.getElementById("myModal").style.display = "none";
                 }
@@ -69,12 +64,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['cancel'])) {
         </body>
         </html>';
         exit;
-    } else {
-        echo "Error deleting reservation: " . $stmt_delete->error;
+    } catch (PDOException $e) {
+        echo "Error deleting reservation.";
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -85,15 +79,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['cancel'])) {
 </head>
 <body>
 <h1>Reservation Details</h1>
-<p>Customer Name: <?php echo htmlspecialchars($reservation['customer_name']); ?></p>
-<p>Customer Email: <?php echo htmlspecialchars($reservation['email']); ?></p>
-<p>Customer Phone: <?php echo htmlspecialchars($reservation['phone']); ?></p>
-<p>Customer Full Name: <?php echo htmlspecialchars($reservation['name']) . ' ' . htmlspecialchars($reservation['surname']); ?></p>
-<p>Barber Name: <?php echo htmlspecialchars($reservation['barber_name']); ?></p>
-<p>Appointment Date: <?php echo htmlspecialchars($reservation['appointment_date']); ?></p>
-<p>Service: <?php echo htmlspecialchars($reservation['service']); ?></p>
+<p>Customer Name: <?php echo htmlspecialchars($reservation['customer_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+<p>Customer Email: <?php echo htmlspecialchars($reservation['email'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+<p>Customer Phone: <?php echo htmlspecialchars($reservation['phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+<p>Customer Full Name: <?php echo htmlspecialchars(($reservation['customer_firstname'] ?? '') . ' ' . ($reservation['customer_surname'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></p>
+<p>Barber Name: <?php echo htmlspecialchars($reservation['barber_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+<p>Appointment Date: <?php echo htmlspecialchars($reservation['appointment_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+<p>Service: <?php echo htmlspecialchars($reservation['service'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
 
-<form method="post" action="reservation_detail.php?id=<?php echo htmlspecialchars($reservation_id); ?>">
+<form method="post" action="reservation_detail.php?id=<?php echo htmlspecialchars($reservation_id, ENT_QUOTES, 'UTF-8'); ?>">
     <input type="submit" name="cancel" value="Cancel Reservation">
 </form>
 

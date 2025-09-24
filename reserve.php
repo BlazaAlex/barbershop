@@ -1,19 +1,19 @@
 <?php
-global $conn;
-include 'db.php';
+// reserve.php
 session_start();
+require_once 'db.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $barber_id = $_POST['barber_id'];
-    $appointment_date = $_POST['appointment_date'];
-    $appointment_time = $_POST['appointment_time'];
-    $service = $_POST['service'];
-    $user_id = $_SESSION['user_id'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $barber_id = isset($_POST['barber_id']) ? (int)$_POST['barber_id'] : 0;
+    $appointment_date = $_POST['appointment_date'] ?? '';
+    $appointment_time = $_POST['appointment_time'] ?? '';
+    $service = $_POST['service'] ?? '';
+    $user_id = (int)$_SESSION['user_id'];
 
     // Check if the selected date is a Sunday
     $selected_day = date('N', strtotime($appointment_date));
@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <script type="text/javascript">
                 setTimeout(function() {
                     window.location.href = "reserve.php";
-                }, 3000); // 3000 milliseconds = 3 seconds
+                }, 3000);
             </script>
         </head>
         <body>
@@ -35,7 +35,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <p>Sorry, we are closed on Sundays. Please choose another date.</p>
                 </div>
             </div>
-
             <script>
                 document.querySelector(".close").onclick = function() {
                     document.getElementById("myModal").style.display = "none";
@@ -46,47 +45,54 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         exit;
     }
 
-    // Check if user_id exists in the users table
-    $user_check_sql = "SELECT id FROM b_zakaznici WHERE id = ?";
-    $user_check_stmt = $conn->prepare($user_check_sql);
-    $user_check_stmt->bind_param('i', $user_id);
-    $user_check_stmt->execute();
-    $user_check_result = $user_check_stmt->get_result();
-
-    if ($user_check_result->num_rows === 0) {
+    // Check if user exists
+    $user_check_stmt = $pdo->prepare("SELECT id FROM b_zakaznici WHERE id = :id");
+    $user_check_stmt->execute([':id' => $user_id]);
+    if ($user_check_stmt->rowCount() === 0) {
         echo "Error: User ID $user_id does not exist in the users table.";
         exit;
     }
 
-    // Calculate end time and check if service needs two slots
+    // Calculate end time and whether service needs two slots
     $start_time = new DateTime($appointment_time);
-    $duration = ($service == "Střih a úprava vousů") ? 60 : 30; // 60 minutes for this service
+    $duration = ($service === "Střih a úprava vousů") ? 60 : 30;
     $end_time = clone $start_time;
     $end_time->add(new DateInterval("PT{$duration}M"));
 
-    $appointment_datetime = $appointment_date . ' ' . $appointment_time;
-    $end_time_str = $end_time->format('H:i');
+    $appointment_datetime = $appointment_date . ' ' . $start_time->format('H:i');
+    // For two-slot service compute second slot
+    $second_slot_datetime = null;
+    if ($duration === 60) {
+        $second_slot = clone $start_time;
+        $second_slot->add(new DateInterval('PT30M'));
+        $second_slot_datetime = $appointment_date . ' ' . $second_slot->format('H:i');
+    }
 
-    // Check if the selected slots are already taken
-    $check_sql = "SELECT id FROM b_rezervace 
-                  WHERE barber_id = ? 
-                  AND appointment_date BETWEEN ? AND ?";
-    $check_stmt = $conn->prepare($check_sql);
-    $str = $appointment_date . ' ' . $end_time_str;
-    $check_stmt->bind_param('iss', $barber_id, $appointment_datetime, $str);
-    $check_stmt->execute();
-    $check_result = $check_stmt->get_result();
+    // Check if selected slots are already taken.
+    // We will check for any reservation that matches either slot (for 60min service) or the one slot (30min).
+    $placeholders = [];
+    $params = [':barber_id' => $barber_id];
+    $placeholders[] = ':appt1';
+    $params[':appt1'] = $appointment_datetime . ':00'; // ensure seconds portion
+    if ($second_slot_datetime !== null) {
+        $placeholders[] = ':appt2';
+        $params[':appt2'] = $second_slot_datetime . ':00';
+    }
 
-    if ($check_result->num_rows > 0) {
-        // If the slot is already taken, show an error message
+    $in_clause = implode(',', $placeholders);
+    $check_sql = "SELECT id FROM b_rezervace WHERE barber_id = :barber_id AND appointment_date IN ($in_clause)";
+    $check_stmt = $pdo->prepare($check_sql);
+    $check_stmt->execute($params);
+    if ($check_stmt->rowCount() > 0) {
+        // Slot taken
         echo '<!DOCTYPE html>
         <html>
         <head>
             <link rel="stylesheet" type="text/css" href="style.css">
             <script type="text/javascript">
                 setTimeout(function() {
-		        document.getElementById("myModal").style.display = "none";
-                }, 3000); // 3000 milliseconds = 3 seconds
+                    document.getElementById("myModal").style.display = "none";
+                }, 3000);
             </script>
         </head>
         <body>
@@ -96,7 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <p>Sorry, the selected time slot is already taken. Please choose another time.</p>
                 </div>
             </div>
-
             <script>
                 document.querySelector(".close").onclick = function() {
                     document.getElementById("myModal").style.display = "none";
@@ -105,34 +110,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         </body>
         </html>';
     } else {
+        // Insert reservation(s) using transaction
+        try {
+            $pdo->beginTransaction();
+            $insert_sql = "INSERT INTO b_rezervace (user_id, barber_id, appointment_date, service) VALUES (:user_id, :barber_id, :appointment_date, :service)";
+            $insert_stmt = $pdo->prepare($insert_sql);
 
-        // Insert reservation(s)
-        $sql = "INSERT INTO b_rezervace (user_id, barber_id, appointment_date, service) VALUES (?, ?, ?, ?)";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param('iiss', $user_id, $barber_id, $appointment_datetime, $service);
+            // Insert first slot
+            $insert_stmt->execute([
+                    ':user_id' => $user_id,
+                    ':barber_id' => $barber_id,
+                    ':appointment_date' => $appointment_datetime . ':00',
+                    ':service' => $service
+            ]);
 
-        if ($service == "Střih a úprava vousů") {
-            // Insert two slots for this service
-            $stmt->execute();
+            // Insert second slot if needed
+            if ($second_slot_datetime !== null) {
+                $insert_stmt->execute([
+                        ':user_id' => $user_id,
+                        ':barber_id' => $barber_id,
+                        ':appointment_date' => $second_slot_datetime . ':00',
+                        ':service' => $service
+                ]);
+            }
 
-            $second_slot_time = clone $start_time;
-            $second_slot_time->add(new DateInterval('PT30M'));
-            $second_slot_datetime = $appointment_date . ' ' . $second_slot_time->format('H:i');
-            $stmt->bind_param('iiss', $user_id, $barber_id, $second_slot_datetime, $service);
-            $stmt->execute();
-        } else {
-            // Insert one slot for standard services
-            $stmt->execute();
-        }
+            $pdo->commit();
 
-        echo '<!DOCTYPE html>
+            echo '<!DOCTYPE html>
                     <html>
                     <head>
                         <link rel="stylesheet" type="text/css" href="style.css">
                         <script type="text/javascript">
                             setTimeout(function() {
                                 window.location.href = "index.php";
-                            }, 1000); // 1000 milliseconds = 1 second
+                            }, 1000);
                         </script>
                     </head>
                     <body>
@@ -142,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 <p>Reservation created!</p>
                             </div>
                         </div>
-        
+
                         <script>
                             document.querySelector(".close").onclick = function() {
                                 document.getElementById("myModal").style.display = "none";
@@ -150,19 +161,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         </script>
                     </body>
                     </html>';
+        } catch (PDOException $e) {
+            $pdo->rollBack();
+            echo "Error creating reservation.";
+        }
     }
 }
 
 // Fetch available barbers
-$sql_barbers = "SELECT id, name FROM b_barbers ORDER BY name";
-$result_barbers = $conn->query($sql_barbers);
-
-$barbers = [];
-if ($result_barbers->num_rows > 0) {
-    while ($row = $result_barbers->fetch_assoc()) {
-        $barbers[] = $row;
-    }
-}
+$stmt_barbers = $pdo->prepare("SELECT id, name FROM b_barbers ORDER BY name");
+$stmt_barbers->execute();
+$barbers = $stmt_barbers->fetchAll();
 
 // Define available times (full and half hours from 10:00 to 20:00)
 $times = [];
@@ -174,25 +183,24 @@ foreach ($period as $time) {
     $times[] = $time->format('H:i');
 }
 ?>
-
 <form method="post" action="reserve.php">
     <link rel="stylesheet" type="text/css" href="style.css">
     Barber Name:
     <select name="barber_id" required>
         <?php foreach ($barbers as $barber): ?>
-            <option value="<?php echo $barber['id']; ?>"><?php echo $barber['name']; ?></option>
+            <option value="<?php echo htmlspecialchars($barber['id'], ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($barber['name'], ENT_QUOTES, 'UTF-8'); ?></option>
         <?php endforeach; ?>
     </select><br>
     Appointment Date: <input
             type="date"
             name="appointment_date"
             min="<?php echo date('Y-m-d'); ?>"
-            value="<?php echo isset($_POST['appointment_date']) ? $_POST['appointment_date'] : ''; ?>"
+            value="<?php echo isset($_POST['appointment_date']) ? htmlspecialchars($_POST['appointment_date'], ENT_QUOTES, 'UTF-8') : ''; ?>"
             required><br>
     Appointment Time:
     <select name="appointment_time" required>
         <?php foreach ($times as $time): ?>
-            <option value="<?php echo $time; ?>"><?php echo $time; ?></option>
+            <option value="<?php echo htmlspecialchars($time, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($time, ENT_QUOTES, 'UTF-8'); ?></option>
         <?php endforeach; ?>
     </select><br>
     Service:

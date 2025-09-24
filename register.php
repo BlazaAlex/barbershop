@@ -1,60 +1,64 @@
 <?php
-global $conn;
-include 'db.php';
+// register.php
+require_once 'db.php';
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Verify Cloudflare Turnstile
     $secret_key = '0x4AAAAAAA1Y3nD2lDebWN-bjwdj4yLVwhQ'; // Replace with your Turnstile secret key
-    $response = $_POST['cf-turnstile-response']; // Turnstile's response parameter
-    $remote_ip = $_SERVER['REMOTE_ADDR'];
+    $response = $_POST['cf-turnstile-response'] ?? '';
+    $remote_ip = $_SERVER['REMOTE_ADDR'] ?? '';
 
-    // API URL to verify Turnstile
     $verify_url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
     $data = [
-        'secret' => $secret_key,
-        'response' => $response,
-        'remoteip' => $remote_ip
+            'secret' => $secret_key,
+            'response' => $response,
+            'remoteip' => $remote_ip
     ];
 
-    // Initialize cURL
+    // Use curl to verify
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $verify_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($ch, CURLOPT_POST, 1);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
-
-    // Execute cURL request
     $result = curl_exec($ch);
 
-    // Check if cURL request was successful
     if (curl_errno($ch)) {
-        die('Error: "' . curl_error($ch) . '" - Code: ' . curl_errno($ch));
+        die('Error verifying Turnstile: "' . curl_error($ch) . '" - Code: ' . curl_errno($ch));
     }
-
-    // Close cURL connection
     curl_close($ch);
 
     $result_json = json_decode($result);
-
-    // Check if Turnstile verification was successful
-    if (!$result_json->success) {
+    if (empty($result_json->success)) {
         die('Error: Turnstile verification failed. Please try again.');
     }
 
-    // Proceed with registration logic (insert into the database, etc.)
-    $username = $_POST['username'];
-    $password = password_hash($_POST['password'], PASSWORD_BCRYPT);
-    $name = $_POST['name'];
-    $surname = $_POST['surname'];
-    $email = $_POST['email'];
-    $phone = $_POST['phone'];
-    $dial_code = $_POST['dial_code'];
+    // Proceed with registration logic
+    $username = trim($_POST['username'] ?? '');
+    $password_hashed = password_hash($_POST['password'] ?? '', PASSWORD_BCRYPT);
+    $name = trim($_POST['name'] ?? '');
+    $surname = trim($_POST['surname'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $phone = trim($_POST['phone'] ?? '');
+    $dial_code = trim($_POST['dial_code'] ?? '');
 
-    // Prepare and execute the query
-    $sql = "INSERT INTO b_zakaznici (username, password, name, surname, email, phone) VALUES (?, ?, ?, ?, ?, ?)";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ssssss", $username, $password, $name, $surname, $email, $phone);
-    if ($stmt->execute()) {
+    // Basic validation (you can extend)
+    if ($username === '' || $password_hashed === false) {
+        die("Invalid input.");
+    }
+
+    try {
+        $sql = "INSERT INTO b_zakaznici (username, password, name, surname, email, phone) VALUES (:username, :password, :name, :surname, :email, :phone)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+                ':username' => $username,
+                ':password' => $password_hashed,
+                ':name'     => $name,
+                ':surname'  => $surname,
+                ':email'    => $email,
+                ':phone'    => $phone
+        ]);
+
         echo '<!DOCTYPE html>
     <html>
     <head>
@@ -74,8 +78,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         </div>
     </body>
     </html>';
-    } else {
-        echo "Error: " . $stmt->error;
+    } catch (PDOException $e) {
+        // In production, do not expose $e->getMessage()
+        echo "Error: " . $e->getMessage();
     }
 }
 ?>
