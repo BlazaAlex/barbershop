@@ -39,20 +39,20 @@ if ($is_admin) {
 }
 $today_reservations = $stmt_today->fetchAll();
 
-// Fetch all barbers
+// Fetch all barbers (needed for timetable)
 $stmt_barbers = $pdo->prepare("SELECT id, name FROM b_barbers ORDER BY name");
 $stmt_barbers->execute();
 $barbers = $stmt_barbers->fetchAll(PDO::FETCH_KEY_PAIR); // id => name
 
-// Fetch all upcoming reservations for timetable (including today) - admins only
+// Fetch upcoming week reservations for timetable (admins only)
 $week_schedule = [];
 if ($is_admin) {
     $sql_week = "
         SELECT r.id, r.appointment_date, r.service, r.barber_id,
-               u.username AS customer_name, u.email, u.phone, u.name AS customer_firstname, u.surname AS customer_surname
+               u.username AS customer_name
         FROM b_rezervace r
         JOIN b_zakaznici u ON r.user_id = u.id
-        WHERE DATE(r.appointment_date) >= :today
+        WHERE DATE(r.appointment_date) > :today
         ORDER BY r.appointment_date
     ";
     $stmt_week = $pdo->prepare($sql_week);
@@ -63,9 +63,7 @@ if ($is_admin) {
         $dt = new DateTime($res['appointment_date']);
         $date = $dt->format('Y-m-d');
         $time = $dt->format('H:i');
-        $week_schedule[$date][$time][$res['barber_id']] =
-                $res['customer_name'] . " (" . $res['service'] . ") | " .
-                ($res['email'] ?? '') . " | " . ($res['phone'] ?? '');
+        $week_schedule[$date][$time][$res['barber_id']] = $res['customer_name'] . " (" . $res['service'] . ")";
     }
 }
 
@@ -171,7 +169,7 @@ for ($i = 0; $i < 7; $i++) {
 <?php endif; ?>
 
 <?php if ($is_admin && $week_schedule): ?>
-    <h2>Weekly Schedule (Including Today)</h2>
+    <h2>Weekly Schedule</h2>
     <table>
         <thead>
         <tr>
@@ -194,8 +192,8 @@ for ($i = 0; $i < 7; $i++) {
                         $cell_text = $week_schedule[$date][$time][$barber_id] ?? '';
                         $cell_class = $cell_text ? 'booked' : '';
                         ?>
-                        <td class="<?= $cell_class ?>" <?= $cell_class ? "title='" . htmlspecialchars($cell_text, ENT_QUOTES) . "'" : "" ?>>
-                            <?= htmlspecialchars($cell_text ? $cell_text : '') ?>
+                        <td class="<?= $cell_class ?>" <?= $cell_class ? "data-info='" . htmlspecialchars($cell_text, ENT_QUOTES) . "'" : "" ?>>
+                            <?= htmlspecialchars($cell_text) ?>
                         </td>
                     <?php endforeach; ?>
                 </tr>
@@ -204,13 +202,3 @@ for ($i = 0; $i < 7; $i++) {
         </tbody>
     </table>
 <?php endif; ?>
-
-<script>
-    function toggleContact(id) {
-        const el = document.getElementById(id);
-        el.style.display = (el.style.display === 'block') ? 'none' : 'block';
-    }
-</script>
-
-</body>
-</html>
