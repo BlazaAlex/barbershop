@@ -1,8 +1,11 @@
 <?php
+// index.php
 session_start();
 require 'db.php';
+
 $pdo = getDbConnection();
 
+// Redirect if not logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
@@ -10,51 +13,48 @@ if (!isset($_SESSION['user_id'])) {
 
 $is_admin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
 
-// Get today's date
+// --- Prepare dates ---
 $today = (new DateTime())->format('Y-m-d');
 
-// Fetch reservations for today (top table)
+// --- Fetch today's reservations ---
 if ($is_admin) {
-    $sql_today = "
-        SELECT r.id, r.appointment_date, r.service, b.name AS barber_name,
-               u.username AS customer_name, u.email, u.phone, u.name AS customer_firstname, u.surname AS customer_surname
-        FROM b_rezervace r
-        JOIN b_barbers b ON r.barber_id = b.id
-        JOIN b_zakaznici u ON r.user_id = u.id
-        WHERE DATE(r.appointment_date) = :today
-        ORDER BY r.appointment_date
-    ";
+    $sql_today = "SELECT r.id, r.appointment_date, r.service, b.name AS barber_name,
+                  u.username AS customer_name, u.email, u.phone, u.name AS customer_firstname,
+                  u.surname AS customer_surname
+                  FROM b_rezervace r
+                  JOIN b_barbers b ON r.barber_id = b.id
+                  JOIN b_zakaznici u ON r.user_id = u.id
+                  WHERE DATE(r.appointment_date) = :today
+                  ORDER BY r.appointment_date";
     $stmt_today = $pdo->prepare($sql_today);
     $stmt_today->execute([':today' => $today]);
 } else {
-    $sql_today = "
-        SELECT r.id, r.appointment_date, r.service, b.name AS barber_name
-        FROM b_rezervace r
-        JOIN b_barbers b ON r.barber_id = b.id
-        WHERE r.user_id = :user_id AND DATE(r.appointment_date) = :today
-        ORDER BY r.appointment_date
-    ";
+    $sql_today = "SELECT r.id, r.appointment_date, r.service, b.name AS barber_name
+                  FROM b_rezervace r
+                  JOIN b_barbers b ON r.barber_id = b.id
+                  WHERE r.user_id = :user_id AND DATE(r.appointment_date) = :today
+                  ORDER BY r.appointment_date";
     $stmt_today = $pdo->prepare($sql_today);
-    $stmt_today->execute([':user_id' => $_SESSION['user_id'], ':today' => $today]);
+    $stmt_today->execute([
+            ':user_id' => $_SESSION['user_id'],
+            ':today' => $today
+    ]);
 }
 $today_reservations = $stmt_today->fetchAll();
 
-// Fetch all barbers (needed for timetable)
+// --- Fetch barbers ---
 $stmt_barbers = $pdo->prepare("SELECT id, name FROM b_barbers ORDER BY name");
 $stmt_barbers->execute();
-$barbers = $stmt_barbers->fetchAll(PDO::FETCH_KEY_PAIR); // id => name
+$barbers = $stmt_barbers->fetchAll(PDO::FETCH_KEY_PAIR);
 
-// Fetch upcoming week reservations for timetable (admins only)
+// --- Weekly schedule (admins only) ---
 $week_schedule = [];
 if ($is_admin) {
-    $sql_week = "
-        SELECT r.id, r.appointment_date, r.service, r.barber_id,
-               u.username AS customer_name
-        FROM b_rezervace r
-        JOIN b_zakaznici u ON r.user_id = u.id
-        WHERE DATE(r.appointment_date) > :today
-        ORDER BY r.appointment_date
-    ";
+    $sql_week = "SELECT r.id, r.appointment_date, r.service, r.barber_id, u.username AS customer_name
+                 FROM b_rezervace r
+                 JOIN b_zakaznici u ON r.user_id = u.id
+                 WHERE DATE(r.appointment_date) > :today
+                 ORDER BY r.appointment_date";
     $stmt_week = $pdo->prepare($sql_week);
     $stmt_week->execute([':today' => $today]);
     $week_reservations_raw = $stmt_week->fetchAll();
@@ -67,7 +67,7 @@ if ($is_admin) {
     }
 }
 
-// Time slots from 10:00 to 20:00 every 30 minutes
+// --- Time slots ---
 $time_slots = [];
 $start_time = new DateTime('10:00');
 $end_time = new DateTime('20:00');
@@ -77,13 +77,23 @@ foreach ($period as $time) {
     $time_slots[] = $time->format('H:i');
 }
 
-// Helper function to check if customer can cancel
+// --- Helper: can cancel ---
 function canCancel($res, $is_admin) {
     if ($is_admin) return true;
     $now = new DateTime();
     $appt_time = new DateTime($res['appointment_date']);
     $diff = $now->diff($appt_time);
     return ($appt_time > $now && $diff->days >= 1);
+}
+
+// --- Prepare next 7 days (excluding Sunday) ---
+$week_days = [];
+$now = new DateTime();
+for ($i = 0; $i < 7; $i++) {
+    $d = (clone $now)->add(new DateInterval("P{$i}D"));
+    if ((int)$d->format('N') < 7) {
+        $week_days[$d->format('Y-m-d')] = $d->format('D, d M');
+    }
 }
 ?>
 
@@ -92,7 +102,7 @@ function canCancel($res, $is_admin) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barber Shop Reservation System</title>
+    <title>Barber Shop Reservation</title>
     <link rel="stylesheet" href="style.css">
     <style>
         .contact-info { display: none; margin-top: 5px; padding: 5px; border: 1px solid #ccc; background: #f9f9f9; font-size: 0.9em; }
@@ -102,11 +112,15 @@ function canCancel($res, $is_admin) {
         th, td { border: 1px solid #ccc; padding: 5px; text-align: left; vertical-align: top; }
         td.booked { background: #ffd; }
     </style>
+    <script>
+        function toggleContact(id) {
+            const elem = document.getElementById(id);
+            elem.style.display = (elem.style.display === 'block') ? 'none' : 'block';
+        }
+    </script>
 </head>
 <body>
-
 <h1>Welcome, <?= htmlspecialchars($_SESSION['username'] ?? 'guest') ?>!</h1>
-
 <nav>
     <a href="reserve.php">Make a Reservation</a> |
     <a href="logout.php">Logout</a>
@@ -120,7 +134,7 @@ function canCancel($res, $is_admin) {
             <th>Date & Time</th>
             <th>Service</th>
             <th>Barber</th>
-            <?php if ($is_admin): ?><th>Customer</th><?php endif; ?>
+            <?php if ($is_admin) echo '<th>Customer</th>'; ?>
             <th>Actions</th>
         </tr>
         </thead>
@@ -159,28 +173,13 @@ function canCancel($res, $is_admin) {
     <p>No reservations for today.</p>
 <?php endif; ?>
 
-<?php
-// --- [keep the same top code: session, DB connection, $is_admin, today's reservations, etc.] ---
-
-// Prepare days for the next 7 days (excluding Sunday)
-$week_days = [];
-$now = new DateTime();
-for ($i = 0; $i < 7; $i++) {
-    $d = (clone $now)->add(new DateInterval("P{$i}D"));
-    if ((int)$d->format('N') < 7) { // skip Sunday
-        $week_days[$d->format('Y-m-d')] = $d->format('D, d M'); // e.g., Mon, 24 Sep
-    }
-}
-?>
 <?php if ($is_admin && !empty($week_schedule)): ?>
     <h2>Weekly Schedule</h2>
     <table>
         <thead>
         <tr>
             <th>Day / Hour</th>
-            <?php foreach ($time_slots as $time): ?>
-                <th><?= $time ?></th>
-            <?php endforeach; ?>
+            <?php foreach ($time_slots as $time) echo "<th>$time</th>"; ?>
         </tr>
         </thead>
         <tbody>
@@ -192,9 +191,7 @@ for ($i = 0; $i < 7; $i++) {
                     <?php endif; ?>
                     <td><?= htmlspecialchars($barber_name) ?></td>
                     <?php foreach ($time_slots as $time): ?>
-                        <td>
-                            <?= $week_schedule[$date][$time][$barber_id] ?? '' ?>
-                        </td>
+                        <td><?= $week_schedule[$date][$time][$barber_id] ?? '' ?></td>
                     <?php endforeach; ?>
                 </tr>
             <?php endforeach; ?>
@@ -202,3 +199,5 @@ for ($i = 0; $i < 7; $i++) {
         </tbody>
     </table>
 <?php endif; ?>
+</body>
+</html>
