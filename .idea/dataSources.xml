@@ -8,5 +8,12 @@
       <jdbc-url>jdbc:mariadb://lab.uzlabina.cz:3306</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="appdb@192.168.137.213" uuid="d3fdf77d-c4e6-46c9-8944-d1b55a4eda06">
+      <driver-ref>mysql.8</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>com.mysql.cj.jdbc.Driver</jdbc-driver>
+      <jdbc-url>jdbc:mysql://192.168.137.213:3306/appdb</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>
