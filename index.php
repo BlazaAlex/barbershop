@@ -169,7 +169,7 @@ for ($i = 0; $i < 7; $i++) {
                             <button type="submit">Cancel</button>
                         </form>
                     <?php else: ?>
-                        <span>Cannot cancel</span>
+                        <span>Cannot cancel.<br>Contact the Barber or Administrator.</span>
                     <?php endif; ?>
                 </td>
             </tr>
