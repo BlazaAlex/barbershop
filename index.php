@@ -1,5 +1,4 @@
 <?php
-// index.php
 session_start();
 require 'db.php';
 $pdo = getDbConnection();
@@ -46,7 +45,7 @@ $stmt_barbers->execute();
 $barbers = $stmt_barbers->fetchAll(PDO::FETCH_KEY_PAIR); // id => name
 
 // Fetch upcoming week reservations for timetable (admins only)
-$week_reservations = [];
+$week_schedule = [];
 if ($is_admin) {
     $sql_week = "
         SELECT r.id, r.appointment_date, r.service, r.barber_id,
@@ -60,8 +59,6 @@ if ($is_admin) {
     $stmt_week->execute([':today' => $today]);
     $week_reservations_raw = $stmt_week->fetchAll();
 
-    // Build a multi-dimensional array: week_schedule[date][time][barber_id] = info
-    $week_schedule = [];
     foreach ($week_reservations_raw as $res) {
         $dt = new DateTime($res['appointment_date']);
         $date = $dt->format('Y-m-d');
@@ -87,6 +84,16 @@ function canCancel($res, $is_admin) {
     $appt_time = new DateTime($res['appointment_date']);
     $diff = $now->diff($appt_time);
     return ($appt_time > $now && $diff->days >= 1);
+}
+
+// Prepare next 7 days excluding Sunday
+$week_days = [];
+$now = new DateTime();
+for ($i = 0; $i < 7; $i++) {
+    $d = (clone $now)->add(new DateInterval("P{$i}D"));
+    if ((int)$d->format('N') < 7) { // skip Sunday
+        $week_days[$d->format('Y-m-d')] = $d->format('D, d M'); // e.g., Mon, 24 Sep
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -115,7 +122,7 @@ function canCancel($res, $is_admin) {
 </nav>
 
 <h2>Today's Reservations</h2>
-<?php if (count($today_reservations) > 0): ?>
+<?php if ($today_reservations): ?>
     <table>
         <thead>
         <tr>
@@ -161,24 +168,12 @@ function canCancel($res, $is_admin) {
     <p>No reservations for today.</p>
 <?php endif; ?>
 
-    // Prepare days for the next 7 days (excluding Sunday)
-<?php
-    $week_days = [];
-    $now = new DateTime();
-    for ($i = 0; $i < 7; $i++) {
-    $d = (clone $now)->add(new DateInterval("P{$i}D"));
-    if ((int)$d->format('N') < 7) { // skip Sunday
-    $week_days[$d->format('Y-m-d')] = $d->format('D, d M'); // e.g., Mon, 24 Sep
-    }
-    }
-    ?>
-
-<?php if ($is_admin && !empty($week_schedule)): ?>
+<?php if ($is_admin && $week_schedule): ?>
     <h2>Weekly Schedule</h2>
     <table>
         <thead>
         <tr>
-            <th>Day / Hour</th>
+            <th>Day / Barber</th>
             <?php foreach ($time_slots as $time): ?>
                 <th><?= $time ?></th>
             <?php endforeach; ?>
@@ -193,9 +188,7 @@ function canCancel($res, $is_admin) {
                     <?php endif; ?>
                     <td><?= htmlspecialchars($barber_name) ?></td>
                     <?php foreach ($time_slots as $time): ?>
-                        <td>
-                            <?= $week_schedule[$date][$time][$barber_id] ?? '' ?>
-                        </td>
+                        <td><?= $week_schedule[$date][$time][$barber_id] ?? '' ?></td>
                     <?php endforeach; ?>
                 </tr>
             <?php endforeach; ?>
@@ -203,3 +196,13 @@ function canCancel($res, $is_admin) {
         </tbody>
     </table>
 <?php endif; ?>
+
+<script>
+    function toggleContact(id) {
+        const el = document.getElementById(id);
+        el.style.display = (el.style.display === 'block') ? 'none' : 'block';
+    }
+</script>
+
+</body>
+</html>
