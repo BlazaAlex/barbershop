@@ -85,17 +85,8 @@ function canCancel($res, $is_admin) {
     $diff = $now->diff($appt_time);
     return ($appt_time > $now && $diff->days >= 1);
 }
-
-// Prepare next 7 days excluding Sunday
-$week_days = [];
-$now = new DateTime();
-for ($i = 0; $i < 7; $i++) {
-    $d = (clone $now)->add(new DateInterval("P{$i}D"));
-    if ((int)$d->format('N') < 7) { // skip Sunday
-        $week_days[$d->format('Y-m-d')] = $d->format('D, d M'); // e.g., Mon, 24 Sep
-    }
-}
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -168,12 +159,25 @@ for ($i = 0; $i < 7; $i++) {
     <p>No reservations for today.</p>
 <?php endif; ?>
 
-<?php if ($is_admin && $week_schedule): ?>
+<?php
+// --- [keep the same top code: session, DB connection, $is_admin, today's reservations, etc.] ---
+
+// Prepare days for the next 7 days (excluding Sunday)
+$week_days = [];
+$now = new DateTime();
+for ($i = 0; $i < 7; $i++) {
+    $d = (clone $now)->add(new DateInterval("P{$i}D"));
+    if ((int)$d->format('N') < 7) { // skip Sunday
+        $week_days[$d->format('Y-m-d')] = $d->format('D, d M'); // e.g., Mon, 24 Sep
+    }
+}
+?>
+<?php if ($is_admin && !empty($week_schedule)): ?>
     <h2>Weekly Schedule</h2>
     <table>
         <thead>
         <tr>
-            <th>Day / Barber</th>
+            <th>Day / Hour</th>
             <?php foreach ($time_slots as $time): ?>
                 <th><?= $time ?></th>
             <?php endforeach; ?>
@@ -188,12 +192,8 @@ for ($i = 0; $i < 7; $i++) {
                     <?php endif; ?>
                     <td><?= htmlspecialchars($barber_name) ?></td>
                     <?php foreach ($time_slots as $time): ?>
-                        <?php
-                        $cell_text = $week_schedule[$date][$time][$barber_id] ?? '';
-                        $cell_class = $cell_text ? 'booked' : '';
-                        ?>
-                        <td class="<?= $cell_class ?>" <?= $cell_class ? "data-info='" . htmlspecialchars($cell_text, ENT_QUOTES) . "'" : "" ?>>
-                            <?= htmlspecialchars($cell_text) ?>
+                        <td>
+                            <?= $week_schedule[$date][$time][$barber_id] ?? '' ?>
                         </td>
                     <?php endforeach; ?>
                 </tr>
