@@ -161,59 +161,45 @@ function canCancel($res, $is_admin) {
     <p>No reservations for today.</p>
 <?php endif; ?>
 
-<?php if ($is_admin && !empty($week_schedule)): ?>
-    <h2>Weekly Schedule (Barber-Time Table)</h2>
-    <?php
-// Get the next 7 days excluding Sundays
-    $days = [];
+    // Prepare days for the next 7 days (excluding Sunday)
+<?php
+    $week_days = [];
     $now = new DateTime();
     for ($i = 0; $i < 7; $i++) {
-        $d = (clone $now)->add(new DateInterval("P{$i}D"));
-        if ((int)$d->format('N') < 7) { // skip Sunday
-            $days[] = $d->format('Y-m-d');
-        }
+    $d = (clone $now)->add(new DateInterval("P{$i}D"));
+    if ((int)$d->format('N') < 7) { // skip Sunday
+    $week_days[$d->format('Y-m-d')] = $d->format('D, d M'); // e.g., Mon, 24 Sep
+    }
     }
     ?>
+
+<?php if ($is_admin && !empty($week_schedule)): ?>
+    <h2>Weekly Schedule</h2>
     <table>
         <thead>
         <tr>
-            <th>Time</th>
-            <?php foreach ($barbers as $barber_name): ?>
-                <th><?= htmlspecialchars($barber_name) ?></th>
+            <th>Day / Hour</th>
+            <?php foreach ($time_slots as $time): ?>
+                <th><?= $time ?></th>
             <?php endforeach; ?>
         </tr>
         </thead>
         <tbody>
-        <?php foreach ($time_slots as $time): ?>
-            <tr>
-                <td><?= $time ?></td>
-                <?php foreach (array_keys($barbers) as $barber_id): ?>
-                    <td>
-                        <?php
-                        $found = false;
-                        foreach ($days as $day) {
-                            if (isset($week_schedule[$day][$time][$barber_id])) {
-                                echo htmlspecialchars($week_schedule[$day][$time][$barber_id]) . "<br>(" . $day . ")";
-                                $found = true;
-                                break; // show first found day per cell
-                            }
-                        }
-                        if (!$found) echo '';
-                        ?>
-                    </td>
-                <?php endforeach; ?>
-            </tr>
+        <?php foreach ($week_days as $date => $day_label): ?>
+            <?php foreach ($barbers as $barber_id => $barber_name): ?>
+                <tr>
+                    <?php if ($barber_id === array_key_first($barbers)): ?>
+                        <td rowspan="<?= count($barbers) ?>"><?= $day_label ?></td>
+                    <?php endif; ?>
+                    <td><?= htmlspecialchars($barber_name) ?></td>
+                    <?php foreach ($time_slots as $time): ?>
+                        <td>
+                            <?= $week_schedule[$date][$time][$barber_id] ?? '' ?>
+                        </td>
+                    <?php endforeach; ?>
+                </tr>
+            <?php endforeach; ?>
         <?php endforeach; ?>
         </tbody>
     </table>
 <?php endif; ?>
-
-<script>
-    function toggleContact(id) {
-        const el = document.getElementById(id);
-        el.style.display = (el.style.display === 'block') ? 'none' : 'block';
-    }
-</script>
-
-</body>
-</html>
