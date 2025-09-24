@@ -8,7 +8,9 @@ if ($secure) {
 }
 session_start();
 
-require_once 'db.php';
+require 'db.php';
+$pdo = getDbConnection();
+
 
 // Optional session timeout logic (commented - keep if you want to enable)
 /*

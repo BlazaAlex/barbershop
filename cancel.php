@@ -1,6 +1,7 @@
 <?php
 session_start();
-include 'db.php';
+require 'db.php';
+$pdo = getDbConnection();
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'admin') {
     header("Location: login.php");
@@ -11,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reservation_id'])) {
     $reservation_id = (int)$_POST['reservation_id'];
 
     try {
-        $stmt = $conn->prepare("DELETE FROM b_rezervace WHERE id = ?");
+        $stmt = $pdo->prepare("DELETE FROM b_rezervace WHERE id = ?");
         if ($stmt->execute([$reservation_id])) {
             echo '<!DOCTYPE html>
             <html>

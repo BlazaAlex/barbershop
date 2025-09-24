@@ -1,6 +1,8 @@
 <?php
 // register.php
-require_once 'db.php';
+require 'db.php';
+$pdo = getDbConnection();
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Verify Cloudflare Turnstile

@@ -1,7 +1,9 @@
 <?php
 // reserve.php
 session_start();
-require_once 'db.php';
+require 'db.php';
+$pdo = getDbConnection();
+
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
