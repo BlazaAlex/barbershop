@@ -173,13 +173,15 @@ for ($i = 0; $i < 7; $i++) {
     <p>No reservations for today.</p>
 <?php endif; ?>
 
-<?php if ($is_admin && !empty($week_schedule)): ?>
-    <h2>Weekly Schedule</h2>
+<?php if ($is_admin && $week_schedule): ?>
+    <h2>Weekly Schedule (Including Today)</h2>
     <table>
         <thead>
         <tr>
-            <th>Day / Hour</th>
-            <?php foreach ($time_slots as $time) echo "<th>$time</th>"; ?>
+            <th>Day / Barber</th>
+            <?php foreach ($time_slots as $time): ?>
+                <th><?= $time ?></th>
+            <?php endforeach; ?>
         </tr>
         </thead>
         <tbody>
@@ -191,7 +193,13 @@ for ($i = 0; $i < 7; $i++) {
                     <?php endif; ?>
                     <td><?= htmlspecialchars($barber_name) ?></td>
                     <?php foreach ($time_slots as $time): ?>
-                        <td><?= $week_schedule[$date][$time][$barber_id] ?? '' ?></td>
+                        <?php
+                        $cell_text = $week_schedule[$date][$time][$barber_id] ?? '';
+                        $cell_class = $cell_text ? 'booked' : '';
+                        ?>
+                        <td class="<?= $cell_class ?>" <?= $cell_class ? "title='" . htmlspecialchars($cell_text, ENT_QUOTES) . "'" : "" ?>>
+                            <?= htmlspecialchars($cell_text ? $res['customer_name'] . " (" . $res['service'] . ")" : '') ?>
+                        </td>
                     <?php endforeach; ?>
                 </tr>
             <?php endforeach; ?>
@@ -199,5 +207,3 @@ for ($i = 0; $i < 7; $i++) {
         </tbody>
     </table>
 <?php endif; ?>
-</body>
-</html>
